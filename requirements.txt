@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+cryptography
+python-jose[cryptography] # Para JWT se você adicionar autenticação depois, mas cryptography já é uma dep
