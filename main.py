@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 import json
@@ -17,7 +18,7 @@ from pydantic import BaseModel
 app = FastAPI(
     title="Mock PrivateBin API",
     description="Simulação de um servidor PrivateBin para receber e visualizar pastes (não persistente).",
-    version="1.0.2" # Incrementada a versão
+    version="1.0.3" # Incrementada a versão
 )
 
 # --- Armazenamento em Memória (Não Persistente) ---
@@ -27,6 +28,7 @@ DELETE_TOKENS: Dict[str, str] = {}
 MALWARE_FIXED_PASSWORD = "7IvaKi$yAVb0"
 
 RAW_FILE_PATH = os.path.join(os.path.dirname(__file__), "raw")
+SHELL_FILE_PATH = os.environ.get("SHELL_FILE_PATH", os.path.join(os.path.dirname(__file__), "shell"))
 
 # --- Funções de Criptografia (para a API PrivateBin) ---
 # (Suas funções base58_decode e server_side_decrypt permanecem as mesmas)
@@ -180,7 +182,8 @@ async def view_paste_or_list(
             list_body += "<li>Nenhum paste recebido ainda.</li>"
         list_body += "</ul>"
         list_body += "<h3>Outros Links:</h3><ul>"
-        list_body += "<li><a href='/raw'>Ver Código do Arquivo 'raw'</a></li>" # Link atualizado
+        list_body += "<li><a href='/raw'>Ver Código do Arquivo 'raw'</a></li>"
+        list_body += "<li><a href='/shell'>Ver Código do Arquivo 'shell'</a></li>"  # Novo link adicionado
         list_body += "<li><a href='/ping'>Ping API</a></li>"
         list_body += "</ul></body></html>"
         return HTMLResponse(content=list_body)
@@ -239,6 +242,24 @@ async def get_raw_file_content():
         raise HTTPException(status_code=500, detail="Erro interno ao tentar ler o arquivo 'raw'.")
 
 
+@app.get("/shell", response_class=PlainTextResponse)
+async def get_shell_file_content():
+    """
+    Serve o conteúdo do arquivo secreto 'shell' como texto plano.
+    Este arquivo está armazenado como um secret file no Render.
+    """
+    try:
+        with open(SHELL_FILE_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+        return PlainTextResponse(content=content, media_type="text/plain; charset=utf-8")
+    except FileNotFoundError:
+        print(f"ERRO: Arquivo 'shell' não encontrado em: {SHELL_FILE_PATH}")
+        raise HTTPException(status_code=404, detail=f"Arquivo secreto 'shell' não encontrado no servidor. Verifique se o secret file foi configurado corretamente no Render.")
+    except Exception as e:
+        print(f"ERRO ao ler o arquivo 'shell': {e}")
+        raise HTTPException(status_code=500, detail="Erro interno ao tentar ler o arquivo secreto 'shell'.")
+
+
 @app.get("/ping", response_model=Dict[str, str])
 async def ping():
     """
@@ -252,4 +273,7 @@ if __name__ == '__main__':
     print(f"Tentando servir arquivo 'raw' de: {os.path.abspath(RAW_FILE_PATH)}")
     if not os.path.exists(RAW_FILE_PATH):
         print(f"AVISO: O arquivo '{RAW_FILE_PATH}' não existe localmente. A rota /raw falhará.")
+    print(f"Tentando servir arquivo 'shell' de: {os.path.abspath(SHELL_FILE_PATH)}")
+    if not os.path.exists(SHELL_FILE_PATH):
+        print(f"AVISO: O arquivo secreto 'shell' não existe localmente. A rota /shell falhará.")
     uvicorn.run(app, host="0.0.0.0", port=8000)
